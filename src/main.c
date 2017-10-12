@@ -1,11 +1,30 @@
 #include "stm32f10x.h"
 #include <math.h>
 
+/**
+ * Definitions
+ */
+#define INF 32000
+
+#define LABIRYNT_SIZE (8 * 8)
+
+#define LEWY_PRZOD (GPIO_SetBits(GPIOB, GPIO_Pin_6))
+#define LEWY_TYL (GPIO_ResetBits(GPIOB, GPIO_Pin_6))
+#define PRAWY_PRZOD (GPIO_SetBits(GPIOB, GPIO_Pin_8))
+#define PRAWY_TYL (GPIO_ResetBits(GPIOB, GPIO_Pin_8))
+
+/*
+ * Variables
+ */
 volatile uint32_t timer_ms = 0;
 
 volatile double time = 0;
+
+char previousKierunek = 'N';
+
 int obroty1, obroty2, temp1, temp2, previousTemp1, previousTemp2, target1,
     target2, uchyb1, uchyb2, uchybPrev1, uchybPrev2; // 1 - left motor
+
 double K = 2, Td = 0.1, Ti = 1, uchybSum1, uchybSum2;
 
 void controllerInit() {
@@ -13,12 +32,6 @@ void controllerInit() {
       target2 = uchyb1 = uchyb2 = uchybPrev1 = uchybPrev2 = 0;
   uchybSum1 = uchybSum2 = 0;
 }
-
-#define INF 32000
-
-#define LABIRYNT_SIZE (8 * 8)
-
-char previousKierunek = 'N';
 
 struct Stack { // zdefiniowanie stosu
   short stack[LABIRYNT_SIZE];
@@ -264,24 +277,51 @@ struct WhereToGo findPath(short actual) { // zwraca N,W,E,S
   return whereToGo;
 }
 
-void SysTick_Handler() {
-  if (timer_ms) {
-    timer_ms--;
+
+void go(char nextKierunek) {
+  char direction; // 0-forward,1-left,2-right,3-back
+  if (nextKierunek == previousKierunek) {
+    direction = '0';
+  } else if ((nextKierunek == 'N' && previousKierunek == 'S') ||
+             (nextKierunek == 'S' && previousKierunek == 'N') ||
+             (nextKierunek == 'E' && previousKierunek == 'W') ||
+             (nextKierunek == 'W' && previousKierunek == 'E')) {
+    direction = '3';
+  } else if ((nextKierunek == 'N' && previousKierunek == 'E') ||
+             (nextKierunek == 'E' && previousKierunek == 'S') ||
+             (nextKierunek == 'W' && previousKierunek == 'N') ||
+             (nextKierunek == 'S' && previousKierunek == 'W')) {
+    direction = '1';
+  } else {
+    direction = '2';
+  }
+
+  switch (direction) { // target1-prawy, target2-lewy
+
+  case 1:
+    target1 += 27 + 70;
+    target2 -= 27 + 70;
+    break;
+  case 2:
+    target1 -= 27 + 70;
+    target2 += 27 + 70;
+    break;
+  case 3:
+    target1 -= 54 + 70;
+    target2 += 54 + 70;
+    break;
+  default:
+    target1 += 70;
+    target2 += 70;
   }
 }
 
-void delay_ms(int time) {
-  timer_ms = time;
-  while (timer_ms > 0) {
-  };
-}
 
-#define LEWY_PRZOD (GPIO_SetBits(GPIOB, GPIO_Pin_6))
-#define LEWY_TYL (GPIO_ResetBits(GPIOB, GPIO_Pin_6))
-#define PRAWY_PRZOD (GPIO_SetBits(GPIOB, GPIO_Pin_8))
-#define PRAWY_TYL (GPIO_ResetBits(GPIOB, GPIO_Pin_8))
+/**
+ * Hardware Initializations
+ */
 
-void PWM_Init() {
+void pwmInit() {
   GPIO_InitTypeDef gpio;
   TIM_TimeBaseInitTypeDef tim;
   TIM_OCInitTypeDef channel;
@@ -336,7 +376,7 @@ void PWM_Init() {
   PRAWY_PRZOD;
 }
 
-void ENCODER_Init() {
+void encoderInit() {
   GPIO_InitTypeDef GPIO_StructInit;
   TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
   TIM_ICInitTypeDef TIM_ICInitStructure;
@@ -403,7 +443,7 @@ void ENCODER_Init() {
   TIM_Cmd(TIM1, ENABLE);
 }
 
-void CZUJNIKI_Init() {
+void czujnikiInit() {
   RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOB |
                              RCC_APB2Periph_GPIOC | RCC_APB2Periph_GPIOD,
                          ENABLE);
@@ -454,27 +494,7 @@ void ledInit(void) {
   GPIO_Init(GPIOC, &gpio);
 }
 
-void ADC_Calib() {
-  ADC_ResetCalibration(ADC1);
-  while (ADC_GetResetCalibrationStatus(ADC1))
-    ;
-
-  ADC_StartCalibration(ADC1);
-  while (ADC_GetCalibrationStatus(ADC1))
-    ;
-}
-
-int adc_read(int channel) {
-  ADC_RegularChannelConfig(ADC1, channel, 1, ADC_SampleTime_71Cycles5);
-  ADC_SoftwareStartConvCmd(ADC1, ENABLE);
-
-  while (!ADC_GetFlagStatus(ADC1, ADC_FLAG_EOC))
-    ;
-
-  return ADC_GetConversionValue(ADC1);
-}
-
-void ADC1_Init() {
+void adc1Init() {
   RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, ENABLE);
   RCC_ADCCLKConfig(RCC_PCLK2_Div6);
   RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOB |
@@ -501,46 +521,9 @@ void ADC1_Init() {
   ADC_Cmd(ADC1, ENABLE);
 }
 
-void go(char nextKierunek) {
-  char direction; // 0-forward,1-left,2-right,3-back
-  if (nextKierunek == previousKierunek) {
-    direction = '0';
-  } else if ((nextKierunek == 'N' && previousKierunek == 'S') ||
-             (nextKierunek == 'S' && previousKierunek == 'N') ||
-             (nextKierunek == 'E' && previousKierunek == 'W') ||
-             (nextKierunek == 'W' && previousKierunek == 'E')) {
-    direction = '3';
-  } else if ((nextKierunek == 'N' && previousKierunek == 'E') ||
-             (nextKierunek == 'E' && previousKierunek == 'S') ||
-             (nextKierunek == 'W' && previousKierunek == 'N') ||
-             (nextKierunek == 'S' && previousKierunek == 'W')) {
-    direction = '1';
-  } else {
-    direction = '2';
-  }
 
-  switch (direction) { // target1-prawy, target2-lewy
-
-  case 1:
-    target1 += 27 + 70;
-    target2 -= 27 + 70;
-    break;
-  case 2:
-    target1 -= 27 + 70;
-    target2 += 27 + 70;
-    break;
-  case 3:
-    target1 -= 54 + 70;
-    target2 += 54 + 70;
-    break;
-  default:
-    target1 += 70;
-    target2 += 70;
-  }
-}
-
-void TIMER_Init() {
-  GPIO_InitTypeDef gpio;
+void timerInit() {
+ // GPIO_InitTypeDef gpio;
   TIM_TimeBaseInitTypeDef tim;
   NVIC_InitTypeDef nvic;
 
@@ -557,27 +540,76 @@ void TIMER_Init() {
 
   TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
   TIM_Cmd(TIM2, ENABLE);
-
   nvic.NVIC_IRQChannel = TIM2_IRQn;
   nvic.NVIC_IRQChannelPreemptionPriority = 0;
   nvic.NVIC_IRQChannelSubPriority = 0;
   nvic.NVIC_IRQChannelCmd = ENABLE;
   NVIC_Init(&nvic);
+
 }
 
+/**
+ * Hardware functions
+ */
+
+void TIM2_IRQHandler() {
+   if (TIM_GetITStatus(TIM2, TIM_IT_Update) == SET) {
+     TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
+     time += 5;
+   }
+}
+
+void SysTick_Handler() {
+  if (timer_ms) {
+    timer_ms--;
+  }
+}
+
+void delay_ms(int time) {
+  timer_ms = time;
+  while (timer_ms > 0) {
+  };
+}
+void adc_calib() {
+  ADC_ResetCalibration(ADC1);
+  while (ADC_GetResetCalibrationStatus(ADC1))
+    ;
+
+  ADC_StartCalibration(ADC1);
+  while (ADC_GetCalibrationStatus(ADC1))
+    ;
+}
+
+int adc_read(int channel) {
+  ADC_RegularChannelConfig(ADC1, channel, 1, ADC_SampleTime_71Cycles5);
+  ADC_SoftwareStartConvCmd(ADC1, ENABLE);
+
+  while (!ADC_GetFlagStatus(ADC1, ADC_FLAG_EOC))
+    ;
+
+  return ADC_GetConversionValue(ADC1);
+}
+
+
+
 int main(void) {
-  char przyciskFlag = 0;
+/**
+ * Init calls
+ */
   SysTick_Config(SystemCoreClock / 1000);
   RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC, ENABLE);
-
-  PWM_Init();
-  ENCODER_Init();
-  CZUJNIKI_Init();
+  pwmInit();
+  encoderInit();
+  czujnikiInit();
   przyciskInit();
   ledInit();
-  ADC1_Init();
-  ADC_Calib();
-
+  adc1Init();
+  adc_calib();
+  timerInit();
+/**
+ * End
+ */
+  char przyciskFlag = 0;
   double voltage;
   uint16_t adc;
 
@@ -720,13 +752,6 @@ int main(void) {
 
       go(next.kierunek);
       previousKierunek = next.kierunek;
-    }
-  }
-
-  void TIM2_IRQHandler() {
-    if (TIM_GetITStatus(TIM2, TIM_IT_Update) == SET) {
-      TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
-      time += 5;
     }
   }
 }
