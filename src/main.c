@@ -280,21 +280,21 @@ struct WhereToGo findPath(short actual) { // zwraca N,W,E,S
 }
 
 void go(char nextKierunek) {
-	char direction; // 0-forward,1-left,2-right,3-back
+	int direction; // 0-forward,1-left,2-right,3-back
 	if (nextKierunek == previousKierunek) {
-		direction = '0';
+		direction = 0;
 	} else if ((nextKierunek == 'N' && previousKierunek == 'S')
 			|| (nextKierunek == 'S' && previousKierunek == 'N')
 			|| (nextKierunek == 'E' && previousKierunek == 'W')
 			|| (nextKierunek == 'W' && previousKierunek == 'E')) {
-		direction = '3';
+		direction = 3;
 	} else if ((nextKierunek == 'N' && previousKierunek == 'E')
 			|| (nextKierunek == 'E' && previousKierunek == 'S')
 			|| (nextKierunek == 'W' && previousKierunek == 'N')
 			|| (nextKierunek == 'S' && previousKierunek == 'W')) {
-		direction = '1';
+		direction = 1;
 	} else {
-		direction = '2';
+		direction = 2;
 	}
 
 	switch (direction) { // target1-prawy, target2-lewy
@@ -658,7 +658,7 @@ int main(void) {
 			previousTemp1 = temp1;
 		}
 		if (temp2 != previousTemp2) {
-			obroty2 += (temp2 > previousTemp2 || (temp1==0&&previousTemp1==5)) ? 1 : -1;
+			obroty2 += (temp2 > previousTemp2 || (temp2==0&&previousTemp2==5)) ? 1 : -1;
 			previousTemp2 = temp2;
 		}
 
