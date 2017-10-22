@@ -25,7 +25,7 @@ char previousKierunek = 'N';
 int obroty1, obroty2, temp1, temp2, previousTemp1, previousTemp2, target1,
 		target2, uchyb1, uchyb2, uchybPrev1, uchybPrev2; // 1 - left motor
 
-double K = 1, Td = 0, Ti = 0, uchybSum1, uchybSum2;
+double K = 0.03, Td = 0.05, Ti = 15, uchybSum1, uchybSum2;
 
 void controllerInit() {
 	obroty1 = obroty2 = temp1 = temp2 = previousTemp1 = previousTemp2 =
@@ -406,8 +406,8 @@ void encoderInit() {
 	TIM_ICInit(TIM3, &TIM_ICInitStructure);
 
 	TIM_EncoderInterfaceConfig(TIM3, TIM_EncoderMode_TI12,
-			TIM_ICPolarity_Falling,
-			TIM_ICPolarity_Falling);
+	TIM_ICPolarity_Falling,
+	TIM_ICPolarity_Falling);
 
 	TIM_SetCounter(TIM3, 0);
 
@@ -436,8 +436,8 @@ void encoderInit() {
 	TIM_ICInit(TIM1, &TIM_ICInitStructure);
 
 	TIM_EncoderInterfaceConfig(TIM1, TIM_EncoderMode_TI12,
-			TIM_ICPolarity_Falling,
-			TIM_ICPolarity_Falling);
+	TIM_ICPolarity_Falling,
+	TIM_ICPolarity_Falling);
 
 	TIM_SetCounter(TIM1, 0);
 
@@ -477,7 +477,7 @@ void przyciskInit(void) {
 	GPIO_StructInit(&gpio);
 
 	gpio.GPIO_Pin = GPIO_Pin_14;
-	gpio.GPIO_Mode = GPIO_Mode_IPU;////////////////////////////////////tu jest problem
+	gpio.GPIO_Mode = GPIO_Mode_IPU; ////////////////////////////////////tu jest problem
 	GPIO_Init(GPIOB, &gpio);
 }
 void ledInit(void) {
@@ -623,63 +623,57 @@ int main(void) {
 
 	controllerInit();
 	int lamp = 0;
-	while (pola[PEEK].odleglosc != 0) {
+	while (pola[PEEK].odleglosc != 0 || uchyb1!=0 || uchyb2!=0) {
 
 		/**
 		 * Checking battery voltage to avoid lipo damage and flame of destruction
 		 */
 		/*
-		adc = adc_read(ADC_Channel_8);
-		voltage = adc * 1.0 / 4096 * 3.3;
-		if (voltage < 2) { // ZMIERZYC GRANICZNA WARTOSC PO ZLOZENIU ROBOTA
-			//GPIO_SetBits(GPIOC, GPIO_Pin_15);
-		} else
-		*/
+		 adc = adc_read(ADC_Channel_8);
+		 voltage = adc * 1.0 / 4096 * 3.3;
+		 if (voltage < 2) { // ZMIERZYC GRANICZNA WARTOSC PO ZLOZENIU ROBOTA
+		 //GPIO_SetBits(GPIOC, GPIO_Pin_15);
+		 } else
+		 */
 		//GPIO_ResetBits(GPIOC, GPIO_Pin_15);
-
 		/**
 		 * Check if switch is pushed
 		 */
-		/*if (GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_14) == 0) {
+		if (!przyciskFlag && GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_14) == 0) {
 			delay_ms(30); // check again after delay to deal with switch bounce
 			if (GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_14) == 0) {
 				przyciskFlag = 1;
+				uchyb1=uchyb2=target1=target2=obroty1=obroty2=0;
 				GPIO_SetBits(GPIOC, GPIO_Pin_13);
 			}
 		} else {
 			GPIO_ResetBits(GPIOC, GPIO_Pin_13);
-		}*/
+		}
+
+		temp1 = (TIM_GetCounter(TIM1)); // left motor is marked as 1
+		temp2 = (TIM_GetCounter(TIM3)); // right motor - 2
+		// update current position of robot based on encoders signals
+		if (temp1 != previousTemp1) {
+			obroty1 += (temp1 < previousTemp1 || (temp1==5&&previousTemp1==0)) ? 1 : -1;
+			previousTemp1 = temp1;
+		}
+		if (temp2 != previousTemp2) {
+			obroty2 += (temp2 > previousTemp2 || (temp1==0&&previousTemp1==5)) ? 1 : -1;
+			previousTemp2 = temp2;
+		}
 
 		/**timeStep is time beetween signals calculations , used for derivative and
 		 * integral. It isn't done the correct way , the time beetween calculations
 		 * will differ, there should be an interrupt which can invoke signals
 		 * calculation, we'll introduce it in future
 		 */
-		int timeStep = 300; // in miliseconds, it must be divided by 1000 in calculation
+		int timeStep = 50; // in miliseconds, it must be divided by 1000 in calculation
 
 		/**
 		 * PID regulator
 		 */
-		/*if (time%timeStep==0) {
-			GPIO_SetBits(GPIOC, GPIO_Pin_15);
-		} else {
-			GPIO_ResetBits(GPIOC, GPIO_Pin_15);
-		}*/
-
 		if (time > timeStep) {
 			time = 0;
-			/*temp1 = (TIM_GetCounter(TIM3)); // left motor is marked as 1
-			temp2 = (TIM_GetCounter(TIM1)); // right motor - 2
-			// update current position of robot based on encoders signals
-
-			if (temp1 != previousTemp1) {
-				obroty1 += temp1 > previousTemp1 ? 1 : -1;
-				previousTemp1 = temp1;
-			}
-			if (temp2 != previousTemp2) {
-				obroty2 += temp2 < previousTemp2 ? 1 : -1;
-				previousTemp2 = temp2;
-			}
 
 			// count errors, used for PID regulator
 			uchyb1 = target1 - obroty1;
@@ -687,37 +681,36 @@ int main(void) {
 
 			double signal1, signal2; // input signals to motors
 
-			uchybSum1 += timeStep / 1000 * uchyb1;
-			uchybSum2 += timeStep / 1000 * uchyb2;
+			uchybSum1 += 1.0*timeStep / 1000 * uchyb1;
+			uchybSum2 += 1.0*timeStep / 1000 * uchyb2;
 
 			signal1 = 1.0 * K
-					* (1 + Td * (uchyb1 - uchybPrev1) / (timeStep / 1000)
-							+ Ti * uchybSum1) * uchyb1;
+					* (1 + Td * (uchyb1 - uchybPrev1) / (1.0 * timeStep / 1000)
+							+ Ti * fabs(uchybSum1)) * uchyb1;
 
 			signal2 = 1.0 * K
-					* (1 + Td * (uchyb2 - uchybPrev2) / (timeStep / 1000)
-							+ Ti * uchybSum2) * uchyb2;
+					* (1 + Td * (uchyb2 - uchybPrev2) / (1.0 * timeStep / 1000)
+							+ Ti * fabs(uchybSum2)) * uchyb2;
 
 			signal1 > 0 ? LEWY_PRZOD : LEWY_TYL;
-			signal2 > 0 ? PRAWY_PRZOD : PRAWY_TYL;*/
-			if(lamp==0){
-			 GPIO_SetBits(GPIOC, GPIO_Pin_15);
-			 }
-			 else{
-			 GPIO_ResetBits(GPIOC, GPIO_Pin_15);
-			 }
-			 lamp = !lamp;
-			/*TIM_SetCompare2(TIM4, fabs(signal1));
-			TIM_SetCompare4(TIM4, fabs(signal2));
+			signal2 > 0 ? PRAWY_PRZOD : PRAWY_TYL;
+			if (lamp == 0) {
+				GPIO_SetBits(GPIOC, GPIO_Pin_15);
+			} else {
+				GPIO_ResetBits(GPIOC, GPIO_Pin_15);
+			}
+			lamp = !lamp;
+			TIM_SetCompare2(TIM4, fmin(300,fabs(signal1)));
+			TIM_SetCompare4(TIM4, fmin(300,fabs(signal2)));
 			uchybPrev1 = uchyb1;
-			uchybPrev2 = uchyb2;*/
+			uchybPrev2 = uchyb2;
 		}
 
 		/**
 		 * Check if robot is at desired position
 		 * if so get next target
 		 */
-		/*if (uchyb1 == 0 && uchyb2 == 0 && przyciskFlag) {
+		if (fabs(uchyb1) < 3 && fabs(uchyb2) < 3 && przyciskFlag && pola[PEEK].odleglosc != 0) {
 			uchybSum1 = uchybSum2 = 0; // reset integrals
 			sprawdzSciany(PEEK);
 			if (checkPole(PEEK) == 1) {
@@ -763,7 +756,10 @@ int main(void) {
 
 			go(next.kierunek);
 			previousKierunek = next.kierunek;
-		}*/
+			uchyb1 = target1 - obroty1;
+			uchyb2 = target2 - obroty2;
+			delay_ms(50);
+		}
 	}
 	while (1) {
 	}

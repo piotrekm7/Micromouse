@@ -14,8 +14,8 @@ OBJS += \
 startup/%.o: ../startup/%.s
 	@echo 'Building file: $<'
 	@echo 'Invoking: MCU GCC Assembler'
-	@echo %cd%
-	arm-none-eabi-as -mcpu=cortex-m3 -mthumb -mfloat-abi=soft -I"C:/STM32/Micromouse/inc" -I"C:/STM32/Micromouse/CMSIS/core" -I"C:/STM32/Micromouse/CMSIS/device" -I"C:/STM32/Micromouse/StdPeriph_Driver/inc" -g -o "$@" "$<"
+	@echo $(PWD)
+	arm-none-eabi-as -mcpu=cortex-m3 -mthumb -mfloat-abi=soft -I"C:/Users/piotr/Desktop/micromouse/inc" -I"C:/Users/piotr/Desktop/micromouse/CMSIS/core" -I"C:/Users/piotr/Desktop/micromouse/CMSIS/device" -I"C:/Users/piotr/Desktop/micromouse/StdPeriph_Driver/inc" -g -o "$@" "$<"
 	@echo 'Finished building: $<'
 	@echo ' '
 
