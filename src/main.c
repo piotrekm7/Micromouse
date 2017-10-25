@@ -18,6 +18,9 @@
  */
 volatile uint32_t timer_ms = 0;
 
+volatile int swtime=0;
+volatile char swflag = 0, przyciskFlag = 0;
+
 volatile int time = 0;
 
 char previousKierunek = 'N';
@@ -477,8 +480,34 @@ void przyciskInit(void) {
 	GPIO_StructInit(&gpio);
 
 	gpio.GPIO_Pin = GPIO_Pin_14;
-	gpio.GPIO_Mode = GPIO_Mode_IPU; ////////////////////////////////////tu jest problem
+	gpio.GPIO_Mode = GPIO_Mode_IPU;
 	GPIO_Init(GPIOB, &gpio);
+}
+void extint_Init(){
+	GPIO_InitTypeDef gpio;
+	EXTI_InitTypeDef exti;
+	NVIC_InitTypeDef nvic;
+
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOB | RCC_APB2Periph_GPIOC | RCC_APB2Periph_GPIOD, ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
+
+	gpio.GPIO_Pin = GPIO_Pin_14;
+	gpio.GPIO_Mode = GPIO_Mode_IPU;
+	GPIO_Init(GPIOB, &gpio);
+
+	GPIO_EXTILineConfig(GPIO_PortSourceGPIOB, GPIO_PinSource14);
+	EXTI_StructInit(&exti);
+	exti.EXTI_Line = EXTI_Line14;
+	exti.EXTI_Mode = EXTI_Mode_Interrupt;
+	exti.EXTI_Trigger = EXTI_Trigger_Falling;
+	exti.EXTI_LineCmd = ENABLE;
+	EXTI_Init(&exti);
+
+	nvic.NVIC_IRQChannel = EXTI15_10_IRQn;
+	nvic.NVIC_IRQChannelPreemptionPriority = 0x00;
+	nvic.NVIC_IRQChannelSubPriority = 0x00;
+	nvic.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&nvic);
 }
 void ledInit(void) {
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC, ENABLE);
@@ -548,11 +577,22 @@ void timerInit() {
 /**
  * Hardware functions
  */
+void EXTI15_10_IRQHandler(){
+	if (EXTI_GetITStatus(EXTI_Line14)) {
+		if(!swflag) {
+			swtime = 0;
+			przyciskFlag=!przyciskFlag;
+			swflag=1;
+		}
+		EXTI_ClearITPendingBit(EXTI_Line14);
+	}
+}
 
 void TIM2_IRQHandler() {
 	if (TIM_GetITStatus(TIM2, TIM_IT_Update) == SET) {
 		TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
 		time += 5;
+		swtime +=5;
 	}
 }
 
@@ -605,7 +645,7 @@ int main(void) {
 	/**
 	 * End
 	 */
-	char przyciskFlag = 0;
+
 	double voltage;
 	uint16_t adc;
 
@@ -636,9 +676,18 @@ int main(void) {
 		 } else
 		 */
 		//GPIO_ResetBits(GPIOC, GPIO_Pin_15);
+
+		if(swtime>150) swflag=0; //delay to deal with switch bounce
+		if(!przyciskFlag){
+			uchyb1=uchyb2=target1=target2=obroty1=obroty2=0;
+			/*
+			 * Add resetting all necessary variables to make the robot solve another maze
+			 */
+		}
 		/**
 		 * Check if switch is pushed
 		 */
+		/*
 		if (!przyciskFlag && GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_14) == 0) {
 			delay_ms(30); // check again after delay to deal with switch bounce
 			if (GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_14) == 0) {
@@ -649,7 +698,7 @@ int main(void) {
 		} else {
 			GPIO_ResetBits(GPIOC, GPIO_Pin_13);
 		}
-
+*/
 		temp1 = (TIM_GetCounter(TIM1)); // left motor is marked as 1
 		temp2 = (TIM_GetCounter(TIM3)); // right motor - 2
 		// update current position of robot based on encoders signals
