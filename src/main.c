@@ -679,10 +679,13 @@ int main(void) {
 
 		if(swtime>150) swflag=0; //delay to deal with switch bounce
 		if(!przyciskFlag){
-			uchyb1=uchyb2=target1=target2=obroty1=obroty2=0;
 			/*
-			 * Add resetting all necessary variables to make the robot solve another maze
+			 * Resetting all necessary variables to make the robot solve another maze
 			 */
+			uchyb1=uchyb2=target1=target2=obroty1=obroty2=0;
+			stos.size = 0;
+			pola[0].s3 = -1;
+			stackPush(&stos, 0);
 		}
 		/**
 		 * Check if switch is pushed
