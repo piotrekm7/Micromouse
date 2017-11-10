@@ -29,13 +29,13 @@ endif
 # Add inputs and outputs from these tool invocations to the build variables 
 
 # All Target
-all: Ratatoskrv1.0.elf
+all: Micromouse.elf
 
 # Tool invocations
-Ratatoskrv1.0.elf: $(OBJS) $(USER_OBJS) C:\Users\piotr\Desktop\micromouse\LinkerScript.ld
+Micromouse.elf: $(OBJS) $(USER_OBJS) C:\STM32\Micromouse\LinkerScript.ld
 	@echo 'Building target: $@'
 	@echo 'Invoking: MCU GCC Linker'
-	arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -mfloat-abi=soft -T"C:\Users\piotr\Desktop\micromouse\LinkerScript.ld" -Wl,-Map=output.map -Wl,--gc-sections -o "Ratatoskrv1.0.elf" @"objects.list" $(USER_OBJS) $(LIBS) -lm
+	arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -mfloat-abi=soft -T"C:\STM32\Micromouse\LinkerScript.ld" -Wl,-Map=output.map -Wl,--gc-sections -lm -o "Micromouse.elf" @"objects.list" $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 	$(MAKE) --no-print-directory post-build
@@ -47,8 +47,8 @@ clean:
 
 post-build:
 	-@echo 'Generating binary and Printing size information:'
-	arm-none-eabi-objcopy -O binary "Ratatoskrv1.0.elf" "Ratatoskrv1.0.bin"
-	arm-none-eabi-size "Ratatoskrv1.0.elf"
+	arm-none-eabi-objcopy -O binary "Micromouse.elf" "Micromouse.bin"
+	arm-none-eabi-size "Micromouse.elf"
 	-@echo ' '
 
 .PHONY: all clean dependents

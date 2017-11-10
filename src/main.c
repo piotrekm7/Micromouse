@@ -13,12 +13,14 @@
 #define PRAWY_PRZOD (GPIO_SetBits(GPIOB, GPIO_Pin_8))
 #define PRAWY_TYL (GPIO_ResetBits(GPIOB, GPIO_Pin_8))
 
+#define DIAMETER 32
+
 /*
  * Variables
  */
 volatile uint32_t timer_ms = 0;
 
-volatile int swtime=0;
+volatile int swtime = 0;
 volatile char swflag = 0, przyciskFlag = 0;
 
 volatile int time = 0;
@@ -28,7 +30,8 @@ char previousKierunek = 'N';
 int obroty1, obroty2, temp1, temp2, previousTemp1, previousTemp2, target1,
 		target2, uchyb1, uchyb2, uchybPrev1, uchybPrev2; // 1 - left motor
 
-double K = 0.03, Td = 0.05, Ti = 15, uchybSum1, uchybSum2;
+double K = 0.9, Td = 0.2, Ti = 0.9, offset = 32, uchybSum1, uchybSum2;
+double offset1, offset2;
 
 void controllerInit() {
 	obroty1 = obroty2 = temp1 = temp2 = previousTemp1 = previousTemp2 =
@@ -315,8 +318,15 @@ void go(char nextKierunek) {
 		target2 += 54 + 70;
 		break;
 	default:
-		target1 += 70;
-		target2 += 70;
+		target1 += 180*6*10/(DIAMETER*3.14);
+		target2 += 180*6*10/(DIAMETER*3.14);
+		/*
+		 * 180: target in mm
+		 * 6: ticks per shaft rotation
+		 * 10: gear rato (10:1)
+		 * DIAMETER: wheel size
+		 * 3.14: pi
+		 */
 	}
 }
 
@@ -483,12 +493,14 @@ void przyciskInit(void) {
 	gpio.GPIO_Mode = GPIO_Mode_IPU;
 	GPIO_Init(GPIOB, &gpio);
 }
-void extintInit(){
+void extintInit() {
 	GPIO_InitTypeDef gpio;
 	EXTI_InitTypeDef exti;
 	NVIC_InitTypeDef nvic;
 
-	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOB | RCC_APB2Periph_GPIOC | RCC_APB2Periph_GPIOD, ENABLE);
+	RCC_APB2PeriphClockCmd(
+			RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOB | RCC_APB2Periph_GPIOC
+					| RCC_APB2Periph_GPIOD, ENABLE);
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
 
 	gpio.GPIO_Pin = GPIO_Pin_14;
@@ -577,12 +589,12 @@ void timerInit() {
 /**
  * Hardware functions
  */
-void EXTI15_10_IRQHandler(){
+void EXTI15_10_IRQHandler() {
 	if (EXTI_GetITStatus(EXTI_Line14)) {
-		if(!swflag) {
+		if (!swflag) {
 			swtime = 0;
-			przyciskFlag=!przyciskFlag;
-			swflag=1;
+			przyciskFlag = !przyciskFlag;
+			swflag = 1;
 		}
 		EXTI_ClearITPendingBit(EXTI_Line14);
 	}
@@ -592,7 +604,7 @@ void TIM2_IRQHandler() {
 	if (TIM_GetITStatus(TIM2, TIM_IT_Update) == SET) {
 		TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
 		time += 5;
-		swtime +=5;
+		swtime += 5;
 	}
 }
 
@@ -664,156 +676,162 @@ int main(void) {
 
 	controllerInit();
 	int lamp = 0;
-	while (pola[PEEK].odleglosc != 0 || uchyb1!=0 || uchyb2!=0) {
-
-		/**
-		 * Checking battery voltage to avoid lipo damage and flame of destruction
-		 */
-		/*
-		 adc = adc_read(ADC_Channel_8);
-		 voltage = adc * 1.0 / 4096 * 3.3;
-		 if (voltage < 2) { // ZMIERZYC GRANICZNA WARTOSC PO ZLOZENIU ROBOTA
-		 //GPIO_SetBits(GPIOC, GPIO_Pin_15);
-		 } else
-		 */
-		//GPIO_ResetBits(GPIOC, GPIO_Pin_15);
-
-		if(swtime>150) swflag=0; //delay to deal with switch bounce
-		if(!przyciskFlag){
-			/*
-			 * Resetting all necessary variables to make the robot solve another maze
-			 */
-			uchyb1=uchyb2=target1=target2=obroty1=obroty2=0;
-			stos.size = 0;
-			pola[0].s3 = -1;
-			stackPush(&stos, 0);
-		}
-		/**
-		 * Check if switch is pushed
-		 */
-		/*
-		if (!przyciskFlag && GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_14) == 0) {
-			delay_ms(30); // check again after delay to deal with switch bounce
-			if (GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_14) == 0) {
-				przyciskFlag = 1;
-				uchyb1=uchyb2=target1=target2=obroty1=obroty2=0;
-				GPIO_SetBits(GPIOC, GPIO_Pin_13);
-			}
-		} else {
-			GPIO_ResetBits(GPIOC, GPIO_Pin_13);
-		}
-*/
-		temp1 = (TIM_GetCounter(TIM1)); // left motor is marked as 1
-		temp2 = (TIM_GetCounter(TIM3)); // right motor - 2
-		// update current position of robot based on encoders signals
-		if (temp1 != previousTemp1) {
-			obroty1 += (temp1 < previousTemp1 || (temp1==5&&previousTemp1==0)) ? 1 : -1;
-			previousTemp1 = temp1;
-		}
-		if (temp2 != previousTemp2) {
-			obroty2 += (temp2 > previousTemp2 || (temp2==0&&previousTemp2==5)) ? 1 : -1;
-			previousTemp2 = temp2;
-		}
-
-		/**timeStep is time beetween signals calculations , used for derivative and
-		 * integral. It isn't done the correct way , the time beetween calculations
-		 * will differ, there should be an interrupt which can invoke signals
-		 * calculation, we'll introduce it in future
-		 */
-		int timeStep = 50; // in miliseconds, it must be divided by 1000 in calculation
-
-		/**
-		 * PID regulator
-		 */
-		if (time > timeStep) {
-			time = 0;
-
-			// count errors, used for PID regulator
-			uchyb1 = target1 - obroty1;
-			uchyb2 = target2 - obroty2;
-
-			double signal1, signal2; // input signals to motors
-
-			uchybSum1 += 1.0*timeStep / 1000 * uchyb1;
-			uchybSum2 += 1.0*timeStep / 1000 * uchyb2;
-
-			signal1 = 1.0 * K
-					* (1 + Td * (uchyb1 - uchybPrev1) / (1.0 * timeStep / 1000)
-							+ Ti * fabs(uchybSum1)) * uchyb1;
-
-			signal2 = 1.0 * K
-					* (1 + Td * (uchyb2 - uchybPrev2) / (1.0 * timeStep / 1000)
-							+ Ti * fabs(uchybSum2)) * uchyb2;
-
-			signal1 > 0 ? LEWY_PRZOD : LEWY_TYL;
-			signal2 > 0 ? PRAWY_PRZOD : PRAWY_TYL;
-			if (lamp == 0) {
-				GPIO_SetBits(GPIOC, GPIO_Pin_15);
-			} else {
-				GPIO_ResetBits(GPIOC, GPIO_Pin_15);
-			}
-			lamp = !lamp;
-			TIM_SetCompare2(TIM4, fmin(300,fabs(signal1)));
-			TIM_SetCompare4(TIM4, fmin(300,fabs(signal2)));
-			uchybPrev1 = uchyb1;
-			uchybPrev2 = uchyb2;
-		}
-
-		/**
-		 * Check if robot is at desired position
-		 * if so get next target
-		 */
-		if (fabs(uchyb1) < 3 && fabs(uchyb2) < 3 && przyciskFlag && pola[PEEK].odleglosc != 0) {
-			uchybSum1 = uchybSum2 = 0; // reset integrals
-			sprawdzSciany(PEEK);
-			if (checkPole(PEEK) == 1) {
-				for (i = stos.size - 2; i >= 0; i--) {
-					if (checkPole(stos.stack[i]) == 0) {
-						break;
-					}
-				}
-				char check = 1;
-				while (check) {
-					check = 0;
-					for (i = 0; i < LABIRYNT_SIZE; i++) {
-						check |= checkPole(i); //?
-					}
-				}
-			}
-
-			struct WhereToGo next = findPath(PEEK);
-			char powrot;
-			switch (next.kierunek) {
-			case 'W': {
-				powrot = previousKierunek == 'E' ? 1 : 0;
-				break;
-			}
-			case 'N': {
-				powrot = previousKierunek == 'S' ? 1 : 0;
-				break;
-			}
-			case 'E': {
-				powrot = previousKierunek == 'W' ? 1 : 0;
-				break;
-			}
-			case 'S': {
-				powrot = previousKierunek == 'N' ? 1 : 0;
-				break;
-			}
-			}
-			if (powrot) {
-				stackPop(&stos);
-			} else {
-				stackPush(&stos, next.numer);
-			}
-
-			go(next.kierunek);
-			previousKierunek = next.kierunek;
-			uchyb1 = target1 - obroty1;
-			uchyb2 = target2 - obroty2;
-			delay_ms(50);
-		}
-	}
 	while (1) {
+		while (pola[PEEK].odleglosc != 0 || uchyb1 != 0 || uchyb2 != 0) {
+
+			/**
+			 * Checking battery voltage to avoid lipo damage and flame of destruction
+			 */
+			/*
+			 adc = adc_read(ADC_Channel_8);
+			 voltage = adc * 1.0 / 4096 * 3.3;
+			 if (voltage < 2) { // ZMIERZYC GRANICZNA WARTOSC PO ZLOZENIU ROBOTA
+			 //GPIO_SetBits(GPIOC, GPIO_Pin_15);
+			 } else
+			 */
+			//GPIO_ResetBits(GPIOC, GPIO_Pin_15);
+			if (swtime > 150)
+				swflag = 0; //delay to deal with switch bounce
+			if (!przyciskFlag) {
+				/*
+				 * Resetting all necessary variables to make the robot solve another maze
+				 */
+				controllerInit();
+				stos.size = 0;
+				pola[0].s3 = -1;
+				stackPush(&stos, 0);
+				GPIO_ResetBits(GPIOC, GPIO_Pin_13);
+			}
+
+			temp1 = (TIM_GetCounter(TIM1)); // left motor is marked as 1
+			temp2 = (TIM_GetCounter(TIM3)); // right motor - 2
+			// update current position of robot based on encoders signals
+			if (temp1 != previousTemp1) {
+				obroty1 +=
+						(temp1 < previousTemp1
+								|| (temp1 == 5 && previousTemp1 == 0)) ? 1 : -1;
+				previousTemp1 = temp1;
+			}
+			if (temp2 != previousTemp2) {
+				obroty2 +=
+						(temp2 > previousTemp2
+								|| (temp2 == 0 && previousTemp2 == 5)) ? 1 : -1;
+				previousTemp2 = temp2;
+			}
+
+			/**timeStep is time beetween signals calculations , used for derivative and
+			 * integral. It isn't done the correct way , the time beetween calculations
+			 * will differ, there should be an interrupt which can invoke signals
+			 * calculation, we'll introduce it in future
+			 */
+			int timeStep = 50; // in miliseconds, it must be divided by 1000 in calculation
+
+			/**
+			 * PID regulator
+			 */
+			if (time > timeStep) {
+				time = 0;
+
+				// count errors, used for PID regulator
+				uchyb1 = target1 - obroty1;
+				uchyb2 = target2 - obroty2;
+
+				double signal1, signal2; // input signals to motors
+
+				uchybSum1 += 1.0 * timeStep / 1000 * uchyb1;
+				uchybSum2 += 1.0 * timeStep / 1000 * uchyb2;
+
+				signal1 = 1.0 * K
+						* (uchyb1
+								+ Td * (uchyb1 - uchybPrev1)
+										/ (1.0 * timeStep / 1000)
+								+ Ti * uchybSum1);
+
+				signal2 = 1.0 * K
+						* (uchyb2
+								+ Td * (uchyb2 - uchybPrev2)
+										/ (1.0 * timeStep / 1000)
+								+ Ti * uchybSum2);
+
+				signal1 > 0 ? LEWY_PRZOD : LEWY_TYL;
+				signal2 > 0 ? PRAWY_PRZOD : PRAWY_TYL;
+				if (lamp == 0) {
+					GPIO_SetBits(GPIOC, GPIO_Pin_15);
+				} else {
+					GPIO_ResetBits(GPIOC, GPIO_Pin_15);
+				}
+				lamp = !lamp;
+
+				if(fabs(signal1)==0) offset1=0;
+				else offset1=offset;
+				if(fabs(signal2)==0) offset2=0;
+								else offset2=offset;
+
+
+				TIM_SetCompare2(TIM4, fmin(150, fabs(signal1)+offset1));
+				TIM_SetCompare4(TIM4, fmin(150, fabs(signal2)+offset2));
+				uchybPrev1 = uchyb1;
+				uchybPrev2 = uchyb2;
+			}
+
+			/**
+			 * Check if robot is at desired position
+			 * if so get next target
+			 */
+			if (fabs(uchyb1) <4 && fabs(uchyb2) <4 && przyciskFlag
+					&& pola[PEEK].odleglosc != 0) {
+				GPIO_SetBits(GPIOC, GPIO_Pin_13);
+				uchybSum1 = uchybSum2 = 0; // reset integrals
+				sprawdzSciany(PEEK);
+				if (checkPole(PEEK) == 1) {
+					for (i = stos.size - 2; i >= 0; i--) {
+						if (checkPole(stos.stack[i]) == 0) {
+							break;
+						}
+					}
+					char check = 1;
+					while (check) {
+						check = 0;
+						for (i = 0; i < LABIRYNT_SIZE; i++) {
+							check |= checkPole(i); //?
+						}
+					}
+				}
+
+				struct WhereToGo next = findPath(PEEK);
+				char powrot;
+				switch (next.kierunek) {
+				case 'W': {
+					powrot = previousKierunek == 'E' ? 1 : 0;
+					break;
+				}
+				case 'N': {
+					powrot = previousKierunek == 'S' ? 1 : 0;
+					break;
+				}
+				case 'E': {
+					powrot = previousKierunek == 'W' ? 1 : 0;
+					break;
+				}
+				case 'S': {
+					powrot = previousKierunek == 'N' ? 1 : 0;
+					break;
+				}
+				}
+				if (powrot) {
+					stackPop(&stos);
+				} else {
+					stackPush(&stos, next.numer);
+				}
+
+				go(next.kierunek);
+				previousKierunek = next.kierunek;
+				uchyb1 = target1 - obroty1;
+				uchyb2 = target2 - obroty2;
+				TIM_SetCompare2(TIM4, 0);//testing
+				TIM_SetCompare4(TIM4, 0);//testing
+				delay_ms(2000); //testing
+			}
+		}
 	}
 }
