@@ -30,8 +30,10 @@ char previousKierunek = 'N';
 int obroty1, obroty2, temp1, temp2, previousTemp1, previousTemp2, target1,
     target2, uchyb1, uchyb2, uchybPrev1, uchybPrev2; // 1 - left motor
 
-double K = 0.9, Td = 0.2, Ti = 0.9, offset = 32, uchybSum1, uchybSum2;
+double K = 0.9, Td = 0.2, Ti = 0.9, offset = 55, uchybSum1, uchybSum2;		//CHANGE
 double offset1, offset2;
+int turnTicks = 36; // number of ticks required to turn robot by 90 degrees	CHANGE
+
 
 void controllerInit() {
   obroty1 = obroty2 = temp1 = temp2 = previousTemp1 = previousTemp2 = target1 =
@@ -303,7 +305,7 @@ void go(char nextKierunek) {
 
   switch (direction) { // target1-prawy, target2-lewy
 
-    int turnTicks = 27; // number of ticks required to turn robot by 90 degrees
+
 
   case 1:
     target1 += turnTicks;
@@ -786,7 +788,7 @@ int main(void) {
        * Check if robot is at desired position
        * if so get next target
        */
-      if (fabs(uchyb1) < 4 && fabs(uchyb2) < 4 && przyciskFlag &&
+      if (fabs(uchyb1) < 4 && fabs(uchyb2) < 4 && przyciskFlag &&	//IDEALLY <1 CHANGE
           pola[PEEK].odleglosc != 0) {
         GPIO_SetBits(GPIOC, GPIO_Pin_13);
         uchybSum1 = uchybSum2 = 0; // reset integrals
@@ -836,7 +838,7 @@ int main(void) {
         previousKierunek = next.kierunek;
         uchyb1 = target1 - obroty1;
         uchyb2 = target2 - obroty2;
-        TIM_SetCompare2(TIM4, 0); // testing
+       TIM_SetCompare2(TIM4, 0); // testing
         TIM_SetCompare4(TIM4, 0); // testing
         delay_ms(2000);           // testing
       }
