@@ -483,7 +483,7 @@ void przyciskInit(void) {
 	gpio.GPIO_Mode = GPIO_Mode_IPU;
 	GPIO_Init(GPIOB, &gpio);
 }
-void extint_Init(){
+void extintInit(){
 	GPIO_InitTypeDef gpio;
 	EXTI_InitTypeDef exti;
 	NVIC_InitTypeDef nvic;
@@ -638,10 +638,11 @@ int main(void) {
 	encoderInit();
 	adc1Init();
 	adc_calib();
-	przyciskInit();
+	//przyciskInit();
 	czujnikiInit();
 	ledInit();
 	timerInit();
+	extintInit();
 	/**
 	 * End
 	 */
